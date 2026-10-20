@@ -1,0 +1,38 @@
+# Secrets and local settings - never commit
+*config*.json
+settings.json
+.env
+*.key
+*.pem
+secrets*
+# Local data and outputs
+*_Data/
+*Data/
+logs/
+backup/
+output/
+Saves/
+temp/
+# Models, environments, caches
+# tools/ is published (make_icon.py, gui_harness.py)
+envs/
+venv/
+.venv/
+models/
+__pycache__/
+*.pyc
+# Media and corpus files (copyright / privacy)
+*.mp3
+*.mp4
+*.mkv
+*.srt
+*.vtt
+*.wav
+# Release builds and local files
+release/
+dist/
+build/
+*.spec
+*.part
+# Local audio output and caches
+*.mp3.part

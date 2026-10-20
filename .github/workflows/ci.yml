@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Tk and a virtual display (the window tests run in-process)
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
+      - name: Install packages and test tools
+        # PyAudioWPatch (Windows audio) has no Linux build; the tests use fake audio sources
+        run: pip install numpy lameenc mutagen pytest pillow
+      - name: Run tests
+        run: xvfb-run -a python -m pytest tests -v
