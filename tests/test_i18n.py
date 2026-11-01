@@ -11,6 +11,7 @@ import re
 
 import pytest
 
+from conftest import app_file
 import tinyrecorder_core as core
 import tinyrecorder_help as helpmod
 import tinyrecorder_i18n as i18n
@@ -179,7 +180,7 @@ def test_the_scan_finds_a_plain_text_and_skips_keys():
 
 
 def test_no_user_visible_literal_in_the_window_code():
-    path = [p for p in code_files() if os.path.basename(p).startswith("tinyrecorder_v")][0]
+    path = app_file()                      # tinyrecorder.py in the repository, tinyrecorder_v*.py in the workbench
     tree = ast.parse(open(path, encoding="utf-8").read())
     found = []
     for node in ast.walk(tree):

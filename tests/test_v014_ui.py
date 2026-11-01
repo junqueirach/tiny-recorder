@@ -3,6 +3,7 @@ Settings switches the language live, the Windows language is the default, and th
 is the same in every language."""
 
 import os
+import sys
 import time
 from tkinter import font as tkfont
 
@@ -72,6 +73,7 @@ def clipped(win):
     return bad
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="the layout is checked with the Windows fonts (Linux fonts are wider)")
 @pytest.mark.parametrize("lang", LANGS)
 def test_every_screen_builds_with_nothing_clipped(tmp_path, monkeypatch, lang):
     a, mod, out = make_app(tmp_path, monkeypatch, ui_language=lang)
