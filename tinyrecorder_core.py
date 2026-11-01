@@ -1,5 +1,5 @@
 """
-Tiny Recorder — core logic (v0.1.3): settings, file names, tags, the recordings list, crash recovery.
+Tiny Recorder — core logic (v0.1.4): settings, file names, tags, the recordings list, crash recovery.
 No Tk and no audio devices here, so every function can be tested without a screen or a sound card.
 """
 
@@ -11,7 +11,7 @@ import time
 from datetime import date, datetime
 
 APP_NAME = "Tiny Recorder"
-APP_VERSION = "0.1.3"
+APP_VERSION = "0.1.4"
 APP_AUTHORS = "Luiz Junqueira & Claude AI"
 APP_CONTACT = "junqueira.ch@gmail.com"
 APP_ID = "Junqueira.TinyRecorder"
@@ -27,14 +27,16 @@ MAX_NAME_LEN = 120                  # characters of the file name without the ex
 
 # ---------------------------------------------------------------- quality presets
 
-PRESETS = {
-    "voice":    {"channels": 1, "kbps": 64,  "label": "Voice: mono, 64 kbps (about 29 MB per hour)"},
-    "standard": {"channels": 2, "kbps": 128, "label": "Standard: stereo, 128 kbps (about 58 MB per hour)"},
-    "high":     {"channels": 2, "kbps": 192, "quality": 2, "label": "High: stereo, 192 kbps (about 86 MB per hour)"},
+PRESETS = {                         # the labels are in tinyrecorder_i18n ("preset.<key>")
+    "voice":    {"channels": 1, "kbps": 64},
+    "standard": {"channels": 2, "kbps": 128},
+    "high":     {"channels": 2, "kbps": 192, "quality": 2},
 }
 
+UI_LANGUAGES = ("en", "pt-BR", "es")
+
 DEFAULTS = {
-    "lang": "en",
+    "ui_language": "",              # empty = follow the Windows display language (the key is then not written)
     "output_dir": "",               # empty = Documents\Tiny Recorder
     "preset": "voice",
     "use_system": True,             # computer audio (what you hear)
@@ -45,7 +47,32 @@ DEFAULTS = {
     "mic_gain": 100,
     "hotkey": True,                 # Ctrl+Alt+R starts and stops from any program
     "window": "",                   # "WxH+X+Y"
+    "transcriptlab_path": "",       # empty = find TranscriptLab automatically (its install.json)
+    "auto_stop_silence": True,      # stop after silence_minutes without sound (item 0C, on by default)
+    "silence_minutes": 5.0,
+    "auto_stop_time": False,        # stop when the recording reaches time_minutes
+    "time_minutes": 60.0,
 }
+
+
+def parse_minutes(text):
+    """A minutes box: '5', '1.5' and '1,5' are accepted; returns a float > 0, or None."""
+    t = str(text or "").strip().replace(",", ".")
+    try:
+        value = float(t)
+    except ValueError:
+        return None
+    return value if 0 < value <= 24 * 60 else None
+
+
+def fmt_minutes(value):
+    """5.0 -> '5', 1.5 -> '1.5' (the box shows what the user typed, without a needless '.0')."""
+    return ("%.2f" % value).rstrip("0").rstrip(".")
+
+# ---------------------------------------------------------------- TranscriptLab (item 9: Transcribe)
+
+TRANSCRIPTLAB_MIN_VERSION = (0, 16, 9)
+TRANSCRIPTLAB_RELEASES_URL = "https://github.com/junqueirach/transcriptlab/releases"
 
 
 # ---------------------------------------------------------------- folders and settings
@@ -70,6 +97,7 @@ def default_output_dir():
 
 def load_config():
     cfg = dict(DEFAULTS)
+    data = {}
     try:
         with open(config_path(), "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -77,12 +105,22 @@ def load_config():
             for k in DEFAULTS:
                 if k in data and type(data[k]) is type(DEFAULTS[k]):
                     cfg[k] = data[k]
+        else:
+            data = {}
     except (OSError, ValueError):
         pass
     if cfg["preset"] not in PRESETS:
         cfg["preset"] = DEFAULTS["preset"]
-    if cfg["lang"] not in ("en", "pt"):
-        cfg["lang"] = "en"
+    if "ui_language" in data:
+        if cfg["ui_language"] not in UI_LANGUAGES:          # a broken or unknown stored value -> English
+            cfg["ui_language"] = "en"
+    elif data.get("lang") == "pt":                          # up to v0.1.3: "pt" was always a choice ...
+        cfg["ui_language"] = "pt-BR"                        # ... "en" was the default for everybody: follow Windows
+    for key in ("silence_minutes", "time_minutes"):
+        if isinstance(data.get(key), int) and not isinstance(data.get(key), bool):
+            cfg[key] = float(data[key])                       # 5 written by hand counts as 5.0
+        if parse_minutes(cfg[key]) is None:
+            cfg[key] = DEFAULTS[key]
     cfg["system_gain"] = max(0, min(200, int(cfg["system_gain"])))
     cfg["mic_gain"] = max(0, min(200, int(cfg["mic_gain"])))
     return cfg
@@ -93,12 +131,195 @@ def save_config(cfg):
     os.makedirs(home_dir(), exist_ok=True)
     tmp = config_path() + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({k: cfg.get(k, DEFAULTS[k]) for k in DEFAULTS}, f, indent=2, ensure_ascii=False)
+        json.dump({k: cfg.get(k, DEFAULTS[k]) for k in DEFAULTS if k != "ui_language" or cfg.get(k)}, f, indent=2,
+                  ensure_ascii=False)
     os.replace(tmp, config_path())
 
 
 def output_dir(cfg):
     return cfg.get("output_dir") or default_output_dir()
+
+
+def version_tuple(text):
+    """'0.16.10' -> (0, 16, 10), compared as numbers; () when there is no number."""
+    return tuple(int(x) for x in re.findall(r"\d+", str(text or "")))
+
+
+def transcriptlab_install_json():
+    """TranscriptLab tells where it is in %APPDATA%\\TranscriptLab\\install.json (written at its every start)."""
+    base = os.environ.get("APPDATA") or os.path.expanduser("~")
+    return os.path.join(base, "TranscriptLab", "install.json")
+
+
+def find_transcriptlab(cfg):
+    """Contract point 5: the path chosen in Settings, else install.json. Returns a dict:
+    {"status": "ok" | "not_found" | "too_old", "command": [...], "version": "...", "source": "settings" | "auto"}.
+    install.json counts only with app TranscriptLab, contract >= 1, version >= 0.16.9 and existing command files."""
+    chosen = cfg.get("transcriptlab_path") or ""
+    if chosen:
+        if os.path.isfile(chosen):
+            return {"status": "ok", "command": [chosen], "version": "", "source": "settings"}
+        return {"status": "not_found", "command": [], "version": "", "source": "settings"}
+    found = {"status": "not_found", "command": [], "version": "", "source": "auto"}
+    try:
+        with open(transcriptlab_install_json(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return found
+    if not isinstance(data, dict) or data.get("app") != "TranscriptLab":
+        return found
+    command = data.get("command")
+    if not (isinstance(command, list) and command and all(isinstance(c, str) and c for c in command)):
+        return found
+    if not all(os.path.isfile(c) for c in command[:2]):         # the exe, or the interpreter and the script
+        return found
+    version = str(data.get("version") or "")
+    contract = data.get("contract")
+    found.update(command=command, version=version)
+    if not isinstance(contract, int) or contract < 1 or version_tuple(version) < TRANSCRIPTLAB_MIN_VERSION:
+        found["status"] = "too_old"
+        return found
+    found["status"] = "ok"
+    return found
+
+
+def transcribe_command(found, path):
+    """Contract point 2: <command> --transcribe <file> --from "Tiny Recorder <version>"."""
+    return list(found["command"]) + ["--transcribe", path, "--from", "%s %s" % (APP_NAME, APP_VERSION)]
+
+
+# ---------------------------------------------------------------- updates (item 0B, as RadioSave)
+# The check asks GitHub's releases API for the latest release (no login; nothing about the user is sent). "Download
+# and install" (frozen exe only) saves the new exe next to the running one as TinyRecorder_v<version>.exe after
+# checking its SHA-256 against the release; the old exe is kept. Errors carry a code the window translates.
+
+RELEASES_API = "https://api.github.com/repos/junqueirach/tiny-recorder/releases/latest"
+APP_RELEASES_URL = APP_REPO_URL + "/releases"
+
+
+UPDATE_ERROR_CODES = ("no_release", "http", "offline", "no_version", "no_exe", "not_github", "no_checksum",
+                      "mismatch", "cancelled")                     # texts: tinyrecorder_i18n "upd.err.<code>"
+
+
+class UpdateError(Exception):
+    """code: one of UPDATE_ERROR_CODES; values fill the text's {placeholders}."""
+
+    def __init__(self, error_code, **values):                 # not "code": the http error has a {code} value
+        super().__init__(error_code)
+        self.code, self.values = error_code, values
+
+
+def update_api_url():
+    return os.environ.get("TINYRECORDER_UPDATE_API", "").strip() or RELEASES_API
+
+
+def _http_get(url, timeout=15):
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "%s/%s" % (APP_ID, APP_VERSION),
+                                               "Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:                  # noqa: S310
+        return r.read(2_000_000)
+
+
+def is_newer(version, current=APP_VERSION):
+    return version_tuple(version) > version_tuple(current)
+
+
+def check_update(getter=None, timeout=15):
+    """{'version', 'newer', 'notes', 'page', 'published', 'exe': {name, url, size, sha256, sha256_url} | None}."""
+    import urllib.error
+    try:
+        data = json.loads((getter or _http_get)(update_api_url(), timeout).decode("utf-8", "replace"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:                       # GitHub's answer while no release is published
+            raise UpdateError("no_release")
+        raise UpdateError("http", code=exc.code)
+    except Exception as exc:                                                 # noqa: BLE001
+        raise UpdateError("offline", reason=getattr(exc, "reason", None) or exc)
+    tag = str(data.get("tag_name") or data.get("name") or "").strip() if isinstance(data, dict) else ""
+    if not tag:
+        raise UpdateError("no_version")
+    version = tag.lstrip("vV")
+    assets = data.get("assets") or []
+    sums = {str(a.get("name") or "")[:-7].lower(): a.get("browser_download_url") or ""
+            for a in assets if str(a.get("name") or "").lower().endswith(".sha256")}
+    exe = None
+    for a in assets:
+        name = str(a.get("name") or "")
+        if name.lower().endswith(".exe"):
+            digest = str(a.get("digest") or "")
+            exe = {"name": name, "url": a.get("browser_download_url") or "", "size": int(a.get("size") or 0),
+                   "sha256": digest.split(":", 1)[1].lower() if digest.lower().startswith("sha256:") else "",
+                   "sha256_url": sums.get(name.lower(), "")}
+            break
+    return {"version": version, "newer": is_newer(version), "notes": str(data.get("body") or "").strip(),
+            "page": data.get("html_url") or APP_RELEASES_URL, "published": str(data.get("published_at") or "")[:10],
+            "exe": exe}
+
+
+def update_url_allowed(url):
+    if os.environ.get("TINYRECORDER_UPDATE_API"):
+        return True                                                          # tests: a file:// fake release
+    return bool(re.match(r"^https://(github\.com|objects\.githubusercontent\.com|"
+                         r"release-assets\.githubusercontent\.com)/", url or ""))
+
+
+def expected_sha256(exe, getter=None):
+    if exe.get("sha256"):
+        return exe["sha256"]
+    if exe.get("sha256_url"):
+        if not update_url_allowed(exe["sha256_url"]):
+            raise UpdateError("not_github")
+        m = re.search(r"\b([0-9a-fA-F]{64})\b", (getter or _http_get)(exe["sha256_url"], 15).decode("utf-8", "replace"))
+        if m:
+            return m.group(1).lower()
+    raise UpdateError("no_checksum")
+
+
+def update_target(version, folder):
+    return os.path.join(folder, "TinyRecorder_v%s.exe" % version)
+
+
+def download_update(info, folder, progress=None, cancel=None, opener=None, getter=None):
+    """Download the release exe into folder and verify it. Returns the new exe path."""
+    import hashlib
+    import urllib.request
+    exe = info.get("exe")
+    if not exe or not exe.get("url"):
+        raise UpdateError("no_exe")
+    if not update_url_allowed(exe["url"]):
+        raise UpdateError("not_github")
+    want = expected_sha256(exe, getter)
+    dest = update_target(info["version"], folder)
+    part = dest + ".part"
+    opener = opener or (lambda u: urllib.request.urlopen(                     # noqa: S310
+        urllib.request.Request(u, headers={"User-Agent": "%s/%s" % (APP_ID, APP_VERSION)}), timeout=60))
+    h = hashlib.sha256()
+    done = 0
+    try:
+        with opener(exe["url"]) as r, open(part, "wb") as f:
+            total = int(getattr(r, "headers", {}).get("Content-Length") or exe.get("size") or 0)
+            while True:
+                if cancel and cancel():
+                    raise UpdateError("cancelled")
+                chunk = r.read(1 << 16)
+                if not chunk:
+                    break
+                f.write(chunk)
+                h.update(chunk)
+                done += len(chunk)
+                if progress:
+                    progress(done, total)
+        if h.hexdigest().lower() != want:
+            raise UpdateError("mismatch")
+        os.replace(part, dest)
+        return dest
+    except Exception:
+        try:
+            os.remove(part)
+        except OSError:
+            pass
+        raise
 
 
 # ---------------------------------------------------------------- tags
@@ -255,12 +476,23 @@ def finalize(part_path, folder, tags):
 
 
 def retag_and_rename(path, tags):
-    """Edit an existing recording: new tags, and the file renamed to match. Returns (new_path, error_or_None)."""
+    """Edit an existing recording: new tags, and the file renamed to match. Returns (new_path, error_or_None).
+    The file keeps its time (the list is sorted by it: an edit must not move an old recording to the top), and a
+    title that only changes its capitals renames the file too (Windows allows a case-only rename)."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        st = None
     err = write_tags(path, tags)
     folder = os.path.dirname(path)
     new = unique_path(folder, file_stem(tags), ignore=path)
-    if os.path.normcase(new) != os.path.normcase(path):
+    if os.path.basename(new) != os.path.basename(path):
         os.replace(path, new)
+    if st is not None:
+        try:
+            os.utime(new, (st.st_atime, st.st_mtime))
+        except OSError:
+            pass
     return new, err
 
 
@@ -269,14 +501,19 @@ def retag_and_rename(path, tags):
 def list_recordings(folder, limit=200):
     """Newest first: dicts with path, name, tags, seconds, size, mtime. Reads only the tags of the newest files."""
     out = []
+    files = []
     try:
         with os.scandir(folder) as it:
-            files = [e for e in it if e.is_file() and e.name.lower().endswith(".mp3")]
+            for e in it:
+                try:                                      # a file deleted or renamed meanwhile is skipped
+                    if e.is_file() and e.name.lower().endswith(".mp3"):
+                        files.append((e, e.stat()))
+                except OSError:
+                    continue
     except OSError:
         return out
-    files.sort(key=lambda e: e.stat().st_mtime, reverse=True)
-    for e in files[:limit]:
-        st = e.stat()
+    files.sort(key=lambda es: es[1].st_mtime, reverse=True)
+    for e, st in files[:limit]:
         out.append({"path": e.path, "name": e.name, "tags": read_tags(e.path), "seconds": audio_seconds(e.path),
                     "size": st.st_size, "mtime": st.st_mtime})
     return out

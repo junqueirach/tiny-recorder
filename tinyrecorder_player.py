@@ -1,5 +1,5 @@
 """
-Tiny Recorder — the built-in player (v0.1.3): Play and Stop for a saved recording.
+Tiny Recorder — the built-in player (v0.1.4): Play and Stop for a saved recording.
 
 Uses the Windows Media Control Interface (winmm, MCI) that ships with Windows: no extra package, no decoder to
 install, nothing running in the background. One file plays at a time. The MCI call is injectable, so tests run the

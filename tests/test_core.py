@@ -8,15 +8,15 @@ from tinyrecorder_core import Tags
 
 def test_config_round_trip_and_clamp(isolated_home):
     cfg = core.load_config()
-    assert cfg["preset"] == "voice" and cfg["lang"] == "en"
-    cfg["preset"], cfg["system_gain"], cfg["lang"] = "high", 150, "pt"
+    assert cfg["preset"] == "voice" and cfg["ui_language"] == ""             # v0.1.4: "" = follow Windows
+    cfg["preset"], cfg["system_gain"], cfg["ui_language"] = "high", 150, "pt-BR"
     core.save_config(cfg)
     again = core.load_config()
-    assert (again["preset"], again["system_gain"], again["lang"]) == ("high", 150, "pt")
+    assert (again["preset"], again["system_gain"], again["ui_language"]) == ("high", 150, "pt-BR")
     with open(core.config_path(), "w", encoding="utf-8") as f:
-        f.write('{"preset": "nonsense", "mic_gain": 999, "lang": "xx", "hotkey": "yes"}')
+        f.write('{"preset": "nonsense", "mic_gain": 999, "ui_language": "xx", "hotkey": "yes"}')
     bad = core.load_config()
-    assert bad["preset"] == "voice" and bad["mic_gain"] == 200 and bad["lang"] == "en" and bad["hotkey"] is True
+    assert bad["preset"] == "voice" and bad["mic_gain"] == 200 and bad["ui_language"] == "en" and bad["hotkey"] is True
 
 
 def test_broken_config_file_falls_back(isolated_home):

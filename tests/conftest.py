@@ -1,7 +1,9 @@
 """Test setup: every test runs against a temp settings folder (TINYRECORDER_HOME), never the real one."""
 
+import glob
 import importlib.util
 import os
+import re
 import sys
 
 import numpy as np
@@ -19,7 +21,19 @@ def isolated_home(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("TINYRECORDER_HOME", str(home))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     return home
+
+
+@pytest.fixture(autouse=True)
+def english_interface(monkeypatch):
+    """The tests read English: Windows is reported as en-US unless a test chooses another language."""
+    import tinyrecorder_i18n as i18n
+    import tinyrecorder_winsys as winsys
+    monkeypatch.setattr(winsys, "windows_ui_langid", lambda: 0x0409)
+    i18n.set_lang("en")
+    yield
+    i18n.set_lang("en")
 
 
 class FakeSource(au.Source):
@@ -46,9 +60,19 @@ def fake_sources():
     return [FakeSource("system", 44100, 2, 440), FakeSource("mic", 48000, 1, 880)]
 
 
+def app_file():
+    """The window module: tinyrecorder.py (repository), else the highest tinyrecorder_v*.py (workbench)."""
+    main = os.path.join(ROOT, "tinyrecorder.py")
+    if os.path.exists(main):
+        return main
+    found = sorted(glob.glob(os.path.join(ROOT, "tinyrecorder_v*.py")),
+                   key=lambda p: [int(x) for x in re.findall(r"\d+", os.path.basename(p))])
+    return found[-1]
+
+
 def load_app_module():
-    """The window module is loaded by path (tinyrecorder.py), as the archived versions have dots in their names."""
-    spec = importlib.util.spec_from_file_location("tinyrecorder_app", os.path.join(ROOT, "tinyrecorder.py"))
+    """The file name can have dots in it (tinyrecorder_v0.1.4.py), so it is loaded by path."""
+    spec = importlib.util.spec_from_file_location("tinyrecorder_app", app_file())
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

@@ -102,15 +102,15 @@ def test_dialogs_open_and_close_and_language_switch(app):
         d = cls(a, a)
         a.update()
         d.close()
-    a.cfg["lang"] = "pt"
+    a.cfg["ui_language"] = "pt-BR"                                  # v0.1.4: ui_language replaces lang
     a.settings_saved(True)
     a.update()
-    assert i18n.LANG == "pt" and "Gravar" in a.b_rec.cget("text")
+    assert i18n.LANG == "pt-BR" and "Gravar" in a.b_rec.cget("text")
     d = mod.HelpDialog(a, a)
     a.update()
     assert "Primeiros passos" in d.lb.get(0)
     d.close()
-    a.cfg["lang"] = "en"
+    a.cfg["ui_language"] = "en"
     a.settings_saved(True)
     assert "Record" in a.b_rec.cget("text")
 

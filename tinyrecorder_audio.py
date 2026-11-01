@@ -1,5 +1,5 @@
 """
-Tiny Recorder — the audio engine (v0.1.3).
+Tiny Recorder — the audio engine (v0.1.4).
 
 Two sources are captured with WASAPI (PyAudioWPatch): the computer's sound (loopback of an output device: everything
 you hear) and a microphone (everything you say). A mixer thread keeps one wall clock, takes what each source has
@@ -25,6 +25,8 @@ TICK = 0.1                          # seconds between mixer steps
 MAX_LAG = 0.6                       # seconds of buffered audio kept beyond what is needed (then the oldest is dropped)
 LOW_DISK = 40 * 1024 * 1024         # stop and save when less than this is free
 FRAMES_PER_BUFFER = 2048
+SOUND_LEVEL = 0.01                  # peak of -40 dBFS: above it there is sound (Start on Sound, auto stop on silence)
+PREROLL = 1.0                       # seconds kept while waiting for sound, written when it starts (the first word)
 
 
 # ---------------------------------------------------------------- devices
@@ -153,11 +155,17 @@ class DeviceSource(Source):
 
 
 def _open_system(pa_mod, p, api, name="", owner=None):
-    target = (name + " [Loopback]") if name else \
-        p.get_device_info_by_index(api["defaultOutputDevice"])["name"] + " [Loopback]"
-    info = next((lb for lb in p.get_loopback_device_info_generator() if lb["name"] == target), None)
+    """The loopback of the chosen output device; when it is gone (a headset unplugged), the Windows default one, as
+    for the microphone. The window says which device was used ("started" names)."""
+    loops = list(p.get_loopback_device_info_generator())
+    default = p.get_device_info_by_index(api["defaultOutputDevice"])["name"] + " [Loopback]"
+    info = None
+    for target in ([name + " [Loopback]"] if name else []) + [default]:
+        info = next((lb for lb in loops if lb["name"] == target), None)
+        if info is not None:
+            break
     if info is None:
-        raise OSError("no loopback device named %r" % target)
+        raise OSError("no loopback device named %r" % default)
     s = DeviceSource(pa_mod, p, info, "system", owner)
     s.start()
     return s
@@ -304,10 +312,14 @@ class Recorder:
     """Runs one recording on its own thread. Events go to `events` (a queue the Tk thread drains):
         ("started", out_rate, [source names], [problems])   ("levels", system_peak, mic_peak, seconds, size_bytes)
         ("sourcefail", kind, text)   ("error", text)   ("lowdisk",)   ("stopped", seconds, part_path)
-    The file at part_path is a valid MP3 stream while recording (and after a crash)."""
+        ("triggered",)  (wait_for_sound: the sound started, the file is being written from now)
+    The file at part_path is a valid MP3 stream while recording (and after a crash).
+
+    wait_for_sound (Start on Sound): the devices are open and the meters move, but nothing is written until a ticked
+    source goes above SOUND_LEVEL (or trigger_now()); the last PREROLL seconds before it are written too."""
 
     def __init__(self, part_path, preset, events, opener, system_gain=1.0, mic_gain=1.0, free_check=None,
-                 opener_one=None):
+                 opener_one=None, wait_for_sound=False):
         self.part_path, self.events = part_path, events
         self.channels, self.kbps = preset["channels"], preset["kbps"]
         self.quality = preset.get("quality", 5)
@@ -320,6 +332,16 @@ class Recorder:
         self._cmds = queue.Queue()
         self._thread = None
         self.seconds = 0.0
+        self._waiting = bool(wait_for_sound)
+        self._trigger = threading.Event()
+
+    def trigger_now(self):
+        """Start on Sound: start writing now, without waiting for sound (Record Now pressed while waiting)."""
+        self._trigger.set()
+
+    @property
+    def waiting(self):
+        return self._waiting
 
     def start(self):
         self._thread = threading.Thread(target=self._run, name="recorder", daemon=True)
@@ -383,6 +405,7 @@ class Recorder:
             total_out = 0                                   # frames of wall-clock time, paused or not
             written = 0                                     # frames that went into the file
             last_ev = last_disk = t0
+            preroll, preroll_frames = [], 0                 # while waiting for sound: the last PREROLL seconds
             while not self._stop.wait(TICK):
                 now = time.monotonic()
                 self._handle_commands(lanes, opening, pa_inst, total_out, out_rate, opened)
@@ -391,7 +414,24 @@ class Recorder:
                     continue
                 total_out += n_out
                 blocks = [lane.get(n_out) for lane in lanes.values()]
-                if not self._paused.is_set():
+                if self._waiting:
+                    mix = np.clip(sum(blocks), -1.0, 1.0)
+                    preroll.append((mix * 32767.0).astype(np.int16))
+                    preroll_frames += n_out
+                    while preroll and preroll_frames - len(preroll[0]) >= int(PREROLL * out_rate):
+                        preroll_frames -= len(preroll.pop(0))
+                    heard = max([lane.peak for lane in lanes.values() if lane.enabled] or [0.0])
+                    if heard >= SOUND_LEVEL or self._trigger.is_set():
+                        self._waiting = False
+                        for pcm in preroll:
+                            data = enc.encode(pcm.tobytes())
+                            if data:
+                                f.write(data)
+                        written += preroll_frames
+                        self.seconds = written / float(out_rate)
+                        preroll = []
+                        self._put("triggered")
+                elif not self._paused.is_set():
                     mix = np.clip(sum(blocks), -1.0, 1.0)
                     pcm = (mix * 32767.0).astype(np.int16)
                     data = enc.encode(pcm.tobytes())

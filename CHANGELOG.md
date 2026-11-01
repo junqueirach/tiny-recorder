@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.1.4 — 2026-11-01
+
+- **Interface in English, Portuguese (Brazil) and Spanish**: the Windows display language by default (any other
+  language gives English), Settings → Interface language changes it at once. Settings saved as `ui_language`; the old
+  `lang` setting is read once (`pt` becomes Portuguese, `en` follows Windows). Recordings, tags and file names are the
+  same in every language
+- **Transcribe with TranscriptLab**: a Transcribe button next to Play and a right-click entry hand the selected recording
+  to TranscriptLab 0.16.9 or newer (found through its `install.json`, or chosen in Settings → TranscriptLab). If it is
+  not found or too old, a window offers Locate… and Get TranscriptLab
+- **Record Now** (the old Record) and **Start on Sound**: waits with the devices open and starts writing when a ticked
+  source has sound, with the second before it
+- **Auto stop**: after N silent minutes (on by default, 5) and / or at a set length (shows the time it will stop)
+- **Ctrl+Alt+P** pauses and resumes from any program
+- **Warnings while recording**: Windows moved the sound to another device; the computer audio has been silent for
+  3 minutes
+- **Check for updates** in About and Settings (as RadioSave)
+- The Pause button shows the usual pause sign
+- **Fixed** (a review of 0.1.3):
+  - a second start could bring an Explorer window on the "Tiny Recorder" folder to the front instead of the app
+  - Delete on a network or removable drive deleted for good without saying so; it now asks
+  - changing only the capitals of a title did not rename the file
+  - Edit details moved an old recording to the top of the list
+  - after Stop or an edit, the new or renamed file is selected
+  - the Date box kept the day the app was opened
+  - Ctrl+Alt+R with Settings open started a recording behind it; Settings now closes without saving
+  - a saved computer-audio device that is gone recorded only the microphone; both now fall back to the Windows default
+  - a wrong date on the main window was silently replaced by today; the preview says so
+  - the "hotkey used by another program" warning disappeared or stayed at the wrong times
+  - F1 opened one more Help window each time
+  - a window saved on a removed monitor opened off-screen
+  - a file vanishing while the list loaded stopped the list refreshing
+  - the window did not fit a 1366 × 768 screen (now a compact layout there); the minimum size now always shows some
+    rows of the list
+  - the "Not available: …" warning of a recording disappeared after 0.1 s
+  - the Portuguese Help said untitled recordings are named "Sem título" (the file name is "Untitled")
+- 193 tests (122 new; 8 of the 71 from 0.1.3 rewritten because they tested the old language setting)
+
 ## 0.1.3 — 2026-10-20
 
 - **Third-party notices** (`THIRD_PARTY_LICENSES.md`, also in the release zip): the exe contains mutagen (GPL-2.0-or-later)

@@ -2,7 +2,7 @@
 
 **A very light meeting recorder for Windows: everything the computer plays and everything you say, in one MP3 file.**
 
-No AI, no transcription, no cloud. Teams, Zoom, Meet, a browser, anything that makes sound.
+No AI, no cloud. Teams, Zoom, Meet, a browser, anything that makes sound. In English, Português (Brasil) and Español. To transcribe a recording, Tiny Recorder hands it to [TranscriptLab](https://github.com/junqueirach/transcriptlab), a separate free app that transcribes on your PC.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Python](https://img.shields.io/badge/Python-3.10%2B-blue) [![CI](https://github.com/junqueirach/tiny-recorder/actions/workflows/ci.yml/badge.svg)](https://github.com/junqueirach/tiny-recorder/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/junqueirach/tiny-recorder)](https://github.com/junqueirach/tiny-recorder/releases/latest)
 
@@ -23,7 +23,7 @@ It also completes my **corpus pipeline** (see my [profile](https://github.com/ju
 <p align="center"><img src="docs/screenshots/how-it-works.png" alt="How it works" width="900"></p>
 
 1. Open Tiny Recorder before the meeting. **Computer audio** (what you hear) and **Microphone** (what you say) are ticked.
-2. Press **● Record** (or **Ctrl+Alt+R** from any program). Join your call as usual.
+2. Press **● Record Now** (or **Ctrl+Alt+R** from any program). Join your call as usual. Still in a waiting room? Press **◌ Start on Sound**: the recording starts by itself when the call does.
 3. Fill in **Title**, **People**, **Project** and **Notes** while you record, or later.
 4. Press **■ Stop**. The MP3 is tagged and renamed to **`YYYY-MM-DD - Title.mp3`**.
 
@@ -35,12 +35,17 @@ It also completes my **corpus pipeline** (see my [profile](https://github.com/ju
 - **Play and Stop** inside the app: select a recording, press ▶ Play (or double-click); ■ Stop ends it
 - **Edit later**: right-click a recording → *Edit details and rename…* rewrites the tags and renames the file; *Delete…* moves it to the Recycle Bin
 - **Every file carries the Copyright tag** "not for distribution, personal use only"
-- **Pause / Resume**, level meters for both sources, the window title shows `● REC 00:12:34` in the taskbar
+- **Pause / Resume** (also **Ctrl+Alt+P** from any program), level meters for both sources, the window title shows `● REC 00:12:34` in the taskbar
+- **Start on Sound**: waits with the devices open and starts writing when a ticked source has sound (the second before it included)
+- **Auto stop**: after N silent minutes (on by default, 5) and / or at a set length, with the time it will stop
+- **Transcribe with TranscriptLab**: a button and a right-click entry hand the selected recording to TranscriptLab 0.16.9 or newer; Tiny Recorder sends nothing anywhere
+- **Warnings while recording**: Windows moved the sound to another device; the computer audio has been silent for 3 minutes
+- **Check for updates** in About and Settings (GitHub releases; the exe can download and install the new version after checking its SHA-256; never checks by itself)
 - **Light**: about 3 % of one CPU core while recording (measured 3.4 % with synthetic input, voice preset); voice quality (mono, 64 kbps) is about 29 MB per hour
 - **Nothing is lost**: the MP3 is written while recording; an unfinished file is offered for recovery at the next start;
   the recording stops and saves by itself when the disk is almost full
 - **A blocked microphone never loses the computer audio**: the other source is recorded and a warning is shown
-- **About, Help (F1)**, English and Portuguese, Catppuccin Mocha dark theme
+- **About, Help (F1)**, English, Portuguese (Brazil) and Spanish (the Windows language by default, Settings → Interface language), Catppuccin Mocha dark theme; fits a 1366 × 768 screen
 
 ## Quick start
 
@@ -79,13 +84,13 @@ Tests use `TINYRECORDER_HOME` (a temp folder) and never touch the real settings.
 | `tinyrecorder.py` | the window, dialogs, the event queue |
 | `tinyrecorder_audio.py` | devices, capture, mixer, MP3 stream |
 | `tinyrecorder_player.py` | the built-in player (Windows MCI): Play and Stop |
-| `tinyrecorder_core.py` | settings, file names, tags, recordings list, recovery |
-| `tinyrecorder_winsys.py` | single instance, dark title bar, global hotkey, Explorer |
-| `tinyrecorder_i18n.py`, `tinyrecorder_help.py` | Portuguese text, the Help window text |
+| `tinyrecorder_core.py` | settings, file names, tags, recordings list, recovery, finding TranscriptLab, updates |
+| `tinyrecorder_winsys.py` | single instance, dark title bar, hotkeys, Explorer, Windows language, default output device, starting TranscriptLab |
+| `tinyrecorder_i18n.py`, `tinyrecorder_help.py` | the interface texts in English, Portuguese (Brazil) and Spanish; the Help window text |
 
 ## Project facts
 
-- About 2,600 lines of app code in 7 files, 71 tests, 4 versions (the current one and 3 earlier ones in [`archive/versions`](archive/versions))
+- About 3,700 lines of app code in 7 files, 193 tests, 5 versions (the current one and 4 earlier ones in [`archive/versions`](archive/versions))
 - Built with Python and Tkinter, packaged with PyInstaller
 - Not tested from my side: pressing the global hotkey, real clicks and keys in the window, a real Teams or Zoom call
 
