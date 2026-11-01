@@ -90,7 +90,7 @@ Tests use `TINYRECORDER_HOME` (a temp folder) and never touch the real settings.
 
 ## Project facts
 
-- About 3,700 lines of app code in 7 files, 193 tests, 5 versions (the current one and 4 earlier ones in [`archive/versions`](archive/versions))
+- About 4,300 lines of app code in 7 files, 193 tests, 5 versions (the current one and 4 earlier ones in [`archive/versions`](archive/versions))
 - Built with Python and Tkinter, packaged with PyInstaller
 - Not tested from my side: pressing the global hotkey, real clicks and keys in the window, a real Teams or Zoom call
 
